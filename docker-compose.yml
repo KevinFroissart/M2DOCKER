@@ -1,0 +1,127 @@
+version: '3'
+
+networks:
+  tp.cloud:
+    ipam:
+      config:
+        - subnet: '172.22.10.0/24'
+
+services:
+  nginx:
+    image: 'nginx:latest'
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - './Config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro'
+      - './Data/cert:/cert'
+    networks:
+      tp.cloud:
+        aliases:
+          - 'web.tp.cloud'
+        ipv4_address: '172.22.10.20'
+    restart: 'unless-stopped'
+    command: 'sh -c "rm -rf /cert/*; while ! [ -f /cert/fullchain.pem ] ; do echo \"waiting for cert\"; sleep 1s; done; exec nginx -g \"daemon off;\""'
+    depends_on:
+      - 'myadmin'
+      - 'wordpress1'
+  basededonnees:
+    image: 'mysql:8'
+    expose:
+      - '3306'
+    volumes:
+      - './Data/mysql:/var/lib/mysql'
+    networks:
+      tp.cloud:
+        aliases:
+          - 'mysql.tp.cloud'
+          - 'base.tp.cloud'
+          - 'bdd.tp.cloud'
+    restart: 'unless-stopped'
+    environment:
+      MYSQL_ROOT_PASSWORD: 'ppaasswwoorrdd'
+      MYSQL_USER: 'wp_user'
+      MYSQL_PASSWORD: 'wp_pass'
+      MYSQL_DATABASE: 'wp_base'
+  myadmin:
+    image: 'phpmyadmin/phpmyadmin'
+    expose:
+      - '80'
+    networks:
+      tp.cloud:
+        aliases:
+          - 'phpmyadmin.tp.cloud'
+          - 'pma.tp.cloud'
+    restart: 'unless-stopped'
+    depends_on:
+      - 'basededonnees'
+    environment:
+      PMA_HOST: 'bdd.tp.cloud'
+      PMA_ABSOLUTE_URI: 'http://192.168.246.112/pma/'
+  wordpress1:
+    build: './Build/wordpress/'
+    expose:
+      - '80'
+    volumes:
+      - './Data/php/:/var/www/html/'
+    networks:
+      tp.cloud:
+        aliases:
+          - 'wordpress1.tp.cloud'
+          - 'wp1.tp.cloud'
+    restart: 'unless-stopped'
+    depends_on:
+      - 'basededonnees'
+    environment:
+      WORDPRESS_DB_HOST: 'mysql.tp.cloud'
+      WORDPRESS_DB_USER: 'wp_user'
+      WORDPRESS_DB_PASSWORD: 'wp_pass'
+      WORDPRESS_DB_NAME: 'wp_base'
+  wordpress_intall:
+    image: 'wordpress:cli'
+    volumes:
+      - './Data/php/:/var/www/html/'
+    networks:
+      - 'tp.cloud'
+    restart: 'no'
+    depends_on:
+      - 'wordpress1'
+    environment:
+      WORDPRESS_DB_HOST: 'mysql.tp.cloud'
+      WORDPRESS_DB_USER: 'wp_user'
+      WORDPRESS_DB_PASSWORD: 'wp_pass'
+      WORDPRESS_DB_NAME: 'wp_base'
+    command: 'sh -c "while curl -sL http://wordpress1.tp.cloud | grep "error-page" >/dev/null; do echo \"waiting for ready\"; sleep 1s; done; wp core install --url=http://192.168.246.112 --title=\"Mon Site Wordpress\" --admin_user=monadm --admin_password=monpass --admin_email=monmail@tp.cloud --skip-email"'
+  wordpress2:
+    build: './Build/wordpress/'
+    expose:
+      - '80'
+    volumes:
+      - './Data/php/:/var/www/html/'
+    networks:
+      tp.cloud:
+        aliases:
+          - 'wordpress2.tp.cloud'
+          - 'wp2.tp.cloud'
+    restart: 'unless-stopped'
+    depends_on:
+      - 'wordpress1'
+    environment:
+      WORDPRESS_DB_HOST: 'mysql.tp.cloud'
+      WORDPRESS_DB_USER: 'wp_user'
+      WORDPRESS_DB_PASSWORD: 'wp_pass'
+      WORDPRESS_DB_NAME: 'wp_base'
+  certbot:
+    build: './Build/certbot/'
+    volumes:
+      - './Data/cert:/cert'
+      - './Data/certbot:/etc/letsencrypt'
+      - './Config/certbot:/config'
+    restart: 'no'
+    environment:
+      CERTBOT_NAME: 'cosmoschtroumpf'
+      CERTBOT_DOMAIN: 'cloudtiw.os.univ-lyon1.fr'
+      CERTBOT_MAIL: 'emily.decher@etu.univ-lyon1.fr'
+      CERTBOT_IP: '192.168.246.112'
+      CERTBOT_CONFIG: '/config/app-cred-froissart_decher_token-openrc.sh'
+      CERTBOT_TEST: '1'
